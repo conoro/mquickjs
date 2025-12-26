@@ -204,7 +204,7 @@ static __maybe_unused void mpb_dump(const char *str, const mpb_t *a)
     
     printf("%s= 0x", str);
     for(i = a->len - 1; i >= 0; i--) {
-        printf("%08x", a->tab[i]);
+        printf("%08" PRIx32, (uint32_t)a->tab[i]);
         if (i != 0)
             printf("_");
     }

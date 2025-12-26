@@ -80,13 +80,17 @@ TEST_PROGS=dtoa_test libm_test
 
 all: $(PROGS)
 
-MQJS_OBJS=mqjs.o readline_tty.o readline.o mquickjs.o dtoa.o libm.o cutils.o
+MQJS_OBJS=mqjs.o mqjs_led.o readline_tty.o readline.o mquickjs.o dtoa.o libm.o cutils.o
 LIBS=-lm
 
 mqjs$(EXE): $(MQJS_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 mquickjs.o: mquickjs_atom.h
+
+# Build the REPL stdlib with LED support enabled
+mqjs_stdlib.host.o: mqjs_stdlib.c
+	$(HOST_CC) $(HOST_CFLAGS) -DCONFIG_LED -c -o $@ $<
 
 mqjs_stdlib: mqjs_stdlib.host.o mquickjs_build.host.o
 	$(HOST_CC) $(HOST_LDFLAGS) -o $@ $^
@@ -145,6 +149,15 @@ libm_test: tests/libm_test.o libm.o
 
 rempio2_test: tests/rempio2_test.o libm.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)
+
+# ESP32 target - generates 32-bit headers required before running idf.py build
+esp32: mqjs_stdlib
+	./mqjs_stdlib -m32 > mqjs_stdlib.h
+	./mqjs_stdlib -a -m32 > mquickjs_atom.h
+	@echo ""
+	@echo "32-bit headers generated. Now run:"
+	@echo "  idf.py set-target esp32s3  # or esp32c6, esp32h2"
+	@echo "  idf.py build"
 
 clean:
 	rm -f *.o *.d *~ tests/*.o tests/*.d tests/*~ test_builtin.bin mqjs_stdlib mqjs_stdlib.h mquickjs_build_atoms mquickjs_atom.h mqjs_example example_stdlib example_stdlib.h $(PROGS) $(TEST_PROGS)

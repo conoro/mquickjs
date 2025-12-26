@@ -1,0 +1,12 @@
+menu "MicroQuickJS"
+
+config MQJS_MEM_SIZE
+    int "MicroQuickJS heap size (bytes)"
+    default 262144
+    help
+      Size of the static memory region reserved for the MicroQuickJS
+      allocator. Reduce if you are not using external PSRAM, increase
+      when you have PSRAM available.
+
+endmenu
+

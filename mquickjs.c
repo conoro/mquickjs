@@ -1428,7 +1428,7 @@ static __maybe_unused void dump_string_pos_cache(JSContext *ctx)
             printf("<empty>\n");
         } else {
             JSString *p = JS_VALUE_TO_PTR(ce->str);
-            printf(" utf8_pos=%u/%u utf16_pos=%u\n",
+            printf(" utf8_pos=%" PRIu32 "/%d utf16_pos=%" PRIu32 "\n",
                    ce->str_pos[POS_TYPE_UTF8], (int)p->len, ce->str_pos[POS_TYPE_UTF16]);
         }
     }
@@ -6702,7 +6702,8 @@ static void js_dump_object(JSContext *ctx, JSObject *p, int flags)
             if (p->class_id >= JS_CLASS_UINT8C_ARRAY &&
                 p->class_id <= JS_CLASS_FLOAT64_ARRAY) {            
                 int i, idx;
-                uint32_t v;
+                int32_t v32;
+                uint32_t u32;
                 double d;
                 JSObject *pbuffer;
                 JSByteArray *arr;
@@ -6719,25 +6720,28 @@ static void js_dump_object(JSContext *ctx, JSObject *p, int flags)
                     default:
                     case JS_CLASS_UINT8C_ARRAY:
                     case JS_CLASS_UINT8_ARRAY:
-                        v = *((uint8_t *)arr->buf + idx);
-                        goto ta_i32;
+                        u32 = *((uint8_t *)arr->buf + idx);
+                        js_printf(ctx, "%" PRIu32, u32);
+                        break;
                     case JS_CLASS_INT8_ARRAY:
-                        v = *((int8_t *)arr->buf + idx);
-                        goto ta_i32;
+                        v32 = *((int8_t *)arr->buf + idx);
+                        js_printf(ctx, "%" PRId32, v32);
+                        break;
                     case JS_CLASS_INT16_ARRAY:
-                        v = *((int16_t *)arr->buf + idx);
-                        goto ta_i32;
+                        v32 = *((int16_t *)arr->buf + idx);
+                        js_printf(ctx, "%" PRId32, v32);
+                        break;
                     case JS_CLASS_UINT16_ARRAY:
-                        v = *((uint16_t *)arr->buf + idx);
-                        goto ta_i32;
+                        u32 = *((uint16_t *)arr->buf + idx);
+                        js_printf(ctx, "%" PRIu32, u32);
+                        break;
                     case JS_CLASS_INT32_ARRAY:
-                        v = *((int32_t *)arr->buf + idx);
-                    ta_i32:
-                        js_printf(ctx, "%d", v);
+                        v32 = *((int32_t *)arr->buf + idx);
+                        js_printf(ctx, "%" PRId32, v32);
                         break;
                     case JS_CLASS_UINT32_ARRAY:
-                        v = *((uint32_t *)arr->buf + idx);
-                        js_printf(ctx, "%u", v);
+                        u32 = *((uint32_t *)arr->buf + idx);
+                        js_printf(ctx, "%" PRIu32, u32);
                         break;
                     case JS_CLASS_FLOAT32_ARRAY:
                         d = *((float *)arr->buf + idx);
@@ -7034,7 +7038,7 @@ void JS_DumpMemory(JSContext *ctx, BOOL is_long)
             if (mtag != JS_MTAG_FREE) {
                 if (mtag == JS_MTAG_OBJECT) {
                     JSObject *p = (JSObject *)ptr;
-                    js_printf(ctx, " 0x%08x 0x%08x",
+                    js_printf(ctx, " 0x%08" PRIx32 " 0x%08" PRIx32,
                               val_to_offset(ctx, p->proto), val_to_offset(ctx, p->props));
                 } else {
                     js_printf(ctx, " %10s %10s", "", "");
@@ -8680,7 +8684,7 @@ static int cpool_add(JSParseState *s, JSValue val)
             return i;
     }
 
-    if (s->cpool_len > 65535)
+    if (s->cpool_len == UINT16_MAX)
         js_parse_error(s, "too many constants");
     JS_PUSH_VALUE(s->ctx, val);
     new_cpool = js_resize_value_array(s->ctx, b->cpool, max_int(s->cpool_len + 1, 4));
@@ -11227,7 +11231,7 @@ static void compute_stack_size_push(JSParseState *s,
     js_printf(s->ctx, "%5d: %d\n", pos, stack_len);
 #endif
     if (pos >= (uint32_t)arr->size)
-        js_parse_error(s, "bytecode buffer overlow (pc=%d)", pos);
+        js_parse_error(s, "bytecode buffer overlow (pc=%" PRIu32 ")", pos);
     /* XXX: could avoid the division */
     short_stack_len = 1 + ((unsigned)stack_len % 255);
     if (explore_tab[pos] != 0) {

@@ -34,6 +34,10 @@
 #include <sys/time.h>
 #include <math.h>
 #include <fcntl.h>
+#ifdef ESP_PLATFORM
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#endif
 
 #include "cutils.h"
 #include "readline_tty.h"
@@ -98,6 +102,9 @@ static JSValue js_performance_now(JSContext *ctx, JSValue *this_val, int argc, J
 {
     return JS_NewInt64(ctx, get_time_ms());
 }
+
+/* LED functions are in mqjs_led.c */
+#include "mqjs_led.h"
 
 /* load a script */
 static JSValue js_load(JSContext *ctx, JSValue *this_val, int argc, JSValue *argv)
@@ -175,7 +182,9 @@ static void run_timers(JSContext *ctx)
     BOOL has_timer;
     int i;
     JSTimer *th;
+#ifndef ESP_PLATFORM
     struct timespec ts;
+#endif
 
     for(;;) {
         min_delay = 1000;
@@ -213,9 +222,13 @@ static void run_timers(JSContext *ctx)
         if (!has_timer)
             break;
         if (min_delay > 0) {
+#ifdef ESP_PLATFORM
+            vTaskDelay(pdMS_TO_TICKS(min_delay));
+#else
             ts.tv_sec = min_delay / 1000;
             ts.tv_nsec = (min_delay % 1000) * 1000000;
             nanosleep(&ts, NULL);
+#endif
         }
     }
 }
@@ -260,49 +273,73 @@ static uint8_t *load_file(const char *filename, int *plen)
 
 static int js_log_err_flag;
 
+#ifndef ESP_PLATFORM
 static void js_log_func(void *opaque, const void *buf, size_t buf_len)
 {
     fwrite(buf, 1, buf_len, js_log_err_flag ? stderr : stdout);
 }
+#endif
 
 static void dump_error(JSContext *ctx)
 {
     JSValue obj;
     obj = JS_GetException(ctx);
+#ifdef ESP_PLATFORM
+    /* Simpler output for serial consoles */
+    js_log_err_flag++;
+    JS_PrintValueF(ctx, obj, JS_DUMP_LONG);
+    js_log_err_flag--;
+    fprintf(stderr, "\n");
+#else
     fprintf(stderr, "%s", term_colors[STYLE_ERROR_MSG]);
     js_log_err_flag++;
     JS_PrintValueF(ctx, obj, JS_DUMP_LONG);
     js_log_err_flag--;
     fprintf(stderr, "%s\n", term_colors[COLOR_NONE]);
+#endif
 }
 
 static int eval_buf(JSContext *ctx, const char *eval_str, const char *filename, BOOL is_repl, int parse_flags)
 {
     JSValue val;
     int flags;
-    
-    flags = parse_flags;
-    if (is_repl)
-        flags |= JS_EVAL_RETVAL | JS_EVAL_REPL;
-    val = JS_Parse(ctx, eval_str, strlen(eval_str), filename, flags);
-    if (JS_IsException(val))
-        goto exception;
+    size_t use_len = strlen(eval_str);
 
-    val = JS_Run(ctx, val);
+    flags = parse_flags;
+    if (is_repl) {
+        /* For REPL: enable implicit globals and always return last value */
+        flags |= JS_EVAL_REPL | JS_EVAL_RETVAL;
+    }
+
+    val = JS_Eval(ctx, eval_str, use_len, filename, flags);
     if (JS_IsException(val)) {
-    exception:
         dump_error(ctx);
         return 1;
     } else {
-        if (is_repl) {
+        if (is_repl && !JS_IsUndefined(val)) {
+            /* Print the result if it's not undefined */
+#ifdef ESP_PLATFORM
+            /* Simpler, colorless output for serial consoles */
+            JSCStringBuf tmp;
+            const char *s = JS_ToCString(ctx, val, &tmp);
+            if (s && s[0] != '\0') {
+                printf("%s\n", s);
+            } else if (!JS_IsNull(val)) {
+                JS_PrintValueF(ctx, val, JS_DUMP_LONG);
+                printf("\n");
+            }
+#else
             printf("%s", term_colors[STYLE_RESULT]);
             JS_PrintValueF(ctx, val, JS_DUMP_LONG);
             printf("%s\n", term_colors[COLOR_NONE]);
+#endif
+            fflush(stdout);
         }
         return 0;
     }
 }
 
+#ifndef ESP_PLATFORM
 static int eval_file(JSContext *ctx, const char *filename,
                      int argc, const char **argv, int parse_flags)
 {
@@ -354,7 +391,9 @@ static int eval_file(JSContext *ctx, const char *filename,
     free(buf);
     return ret;
 }
+#endif
 
+#ifndef ESP_PLATFORM
 static void compile_file(const char *filename, const char *outfilename,
                          size_t mem_size, int dump_memory, int parse_flags, BOOL force_32bit)
 {
@@ -424,6 +463,7 @@ static void compile_file(const char *filename, const char *outfilename,
     JS_FreeContext(ctx);
     free(mem_buf);
 }
+#endif
 
 /* repl */
 
@@ -436,6 +476,7 @@ void readline_find_completion(const char *cmdline)
 {
 }
 
+#ifndef ESP_PLATFORM
 static BOOL is_word(int c)
 {
     return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
@@ -533,16 +574,87 @@ static int term_get_color(int *plen, const char *buf, int pos, int buf_len)
     *plen = len;
     return color;
 }
+#endif /* !ESP_PLATFORM */
 
 static int js_interrupt_handler(JSContext *ctx, void *opaque)
 {
     return readline_is_interrupted();
 }
 
-static void repl_run(JSContext *ctx)
+/* naive multi-line detection based on bracket/string balance */
+static BOOL repl_needs_more(const char *src)
+{
+    int brace = 0, paren = 0, bracket = 0;
+    int in_str = 0;
+    BOOL escape = FALSE;
+    BOOL in_line_comment = FALSE;
+    BOOL in_block_comment = FALSE;
+    char prev = 0, c;
+
+    for (; (c = *src) != '\0'; src++) {
+        if (in_line_comment) {
+            if (c == '\n')
+                in_line_comment = FALSE;
+            prev = c;
+            continue;
+        }
+        if (in_block_comment) {
+            if (prev == '*' && c == '/')
+                in_block_comment = FALSE;
+            prev = c;
+            continue;
+        }
+        if (in_str) {
+            if (escape) {
+                escape = FALSE;
+            } else if (c == '\\') {
+                escape = TRUE;
+            } else if (c == in_str) {
+                in_str = 0;
+            }
+            prev = c;
+            continue;
+        }
+        if (prev == '/' && c == '/') {
+            in_line_comment = TRUE;
+            prev = 0;
+            continue;
+        }
+        if (prev == '/' && c == '*') {
+            in_block_comment = TRUE;
+            prev = 0;
+            continue;
+        }
+        if (c == '"' || c == '\'') {
+            in_str = c;
+            prev = c;
+            continue;
+        }
+        switch (c) {
+        case '{': brace++; break;
+        case '}': brace--; break;
+        case '(': paren++; break;
+        case ')': paren--; break;
+        case '[': bracket++; break;
+        case ']': bracket--; break;
+        default: break;
+        }
+        prev = c;
+    }
+    return (brace > 0) || (paren > 0) || (bracket > 0) || in_str || in_block_comment;
+}
+
+#define REPL_BUF_SIZE 4096
+#define REPL_PROMPT       "mqjs > "
+#define REPL_CONT_PROMPT  "... > "
+
+void mqjs_repl(JSContext *ctx)
 {
     ReadlineState *s = &readline_state;
     const char *cmd;
+    static char repl_buf[REPL_BUF_SIZE];
+    size_t repl_len = 0;
+    const char *prompt = REPL_PROMPT;
 
     s->term_width = readline_tty_init();
     s->term_cmd_buf = readline_cmd_buf;
@@ -550,19 +662,48 @@ static void repl_run(JSContext *ctx)
     s->term_cmd_buf_size = sizeof(readline_cmd_buf);
     s->term_history = readline_history;
     s->term_history_buf_size = sizeof(readline_history);
+#ifdef ESP_PLATFORM
+    s->get_color = NULL; /* no ANSI colors on serial */
+#else
     s->get_color = term_get_color;
+#endif
 
     JS_SetInterruptHandler(ctx, js_interrupt_handler);
 
-    for(;;) {
-        cmd = readline_tty(&readline_state, "mqjs > ", FALSE);
+    for (;;) {
+        cmd = readline_tty(&readline_state, prompt, FALSE);
         if (!cmd)
             break;
-        eval_buf(ctx, cmd, "<cmdline>", TRUE, 0);
+
+        size_t cmdlen = strlen(cmd);
+        if ((repl_len + cmdlen + 2) >= sizeof(repl_buf)) {
+            printf("input too long, clearing buffer\n");
+            repl_len = 0;
+            prompt = REPL_PROMPT;
+            continue;
+        }
+        memcpy(repl_buf + repl_len, cmd, cmdlen);
+        repl_len += cmdlen;
+        repl_buf[repl_len++] = '\n';
+        repl_buf[repl_len] = '\0';
+
+        if (repl_needs_more(repl_buf)) {
+            prompt = REPL_CONT_PROMPT;
+            continue;
+        }
+
+        /* Remove trailing newline for cleaner eval */
+        if (repl_len > 0 && repl_buf[repl_len - 1] == '\n')
+            repl_buf[--repl_len] = '\0';
+
+        eval_buf(ctx, repl_buf, "<cmdline>", TRUE, 0);
         run_timers(ctx);
+        repl_len = 0;
+        prompt = REPL_PROMPT;
     }
 }
 
+#ifndef ESP_PLATFORM
 static void help(void)
 {
     printf("MicroQuickJS" "\n"
@@ -745,7 +886,7 @@ int main(int argc, const char **argv)
         }
         
         if (interactive) {
-            repl_run(ctx);
+            mqjs_repl(ctx);
         } else {
             run_timers(ctx);
         }
@@ -762,3 +903,4 @@ int main(int argc, const char **argv)
     free(mem_buf);
     return 1;
 }
+#endif /* !ESP_PLATFORM */

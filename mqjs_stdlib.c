@@ -324,6 +324,19 @@ static const JSPropDef js_performance[] = {
 static const JSClassDef js_performance_obj =
     JS_OBJECT_DEF("Performance", js_performance);
 
+#ifdef CONFIG_LED
+/* LED control for ESP32 - init(gpio) sets pin, rgb() sets color, on()/off() control state */
+static const JSPropDef js_led[] = {
+    JS_CFUNC_DEF("init", 1, js_led_init),
+    JS_CFUNC_DEF("rgb", 3, js_led_rgb),
+    JS_CFUNC_DEF("on", 0, js_led_on),
+    JS_CFUNC_DEF("off", 0, js_led_off),
+    JS_PROP_END,
+};
+static const JSClassDef js_led_obj =
+    JS_OBJECT_DEF("LED", js_led);
+#endif
+
 static const JSPropDef js_global_object[] = {
     JS_PROP_CLASS_DEF("Object", &js_object_class),
     JS_PROP_CLASS_DEF("Function", &js_function_class),
@@ -370,6 +383,9 @@ static const JSPropDef js_global_object[] = {
 
     JS_PROP_CLASS_DEF("console", &js_console_obj),
     JS_PROP_CLASS_DEF("performance", &js_performance_obj),
+#ifdef CONFIG_LED
+    JS_PROP_CLASS_DEF("led", &js_led_obj),
+#endif
     JS_CFUNC_DEF("print", 1, js_print),
 #ifdef CONFIG_CLASS_EXAMPLE
     JS_PROP_CLASS_DEF("Rectangle", &js_rectangle_class),

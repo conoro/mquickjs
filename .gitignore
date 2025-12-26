@@ -1,0 +1,55 @@
+# Build outputs
+*.o
+*.d
+*.a
+*.so
+*.dylib
+*.exe
+*.bin
+*.elf
+*.map
+
+# Host tools (generated)
+mqjs
+mqjs_stdlib
+example
+example_stdlib
+dtoa_test
+libm_test
+rempio2_test
+mquickjs_build_atoms
+
+# Generated headers and bytecode
+mqjs_stdlib.h
+mquickjs_atom.h
+example_stdlib.h
+test_builtin.bin
+
+# ESP-IDF build directories
+build/
+build_*/
+managed_components/
+
+# ESP-IDF generated config
+sdkconfig
+sdkconfig.old
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Backup files
+*.bak
+*.orig
+
+# Debug and profiling
+*.dSYM/
+*.gcda
+*.gcno
+*.prof
+gmon.out
+

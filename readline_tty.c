@@ -33,6 +33,11 @@
 #include <sys/time.h>
 #include <math.h>
 #include <fcntl.h>
+#ifdef ESP_PLATFORM
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <unistd.h>  /* for fsync, fileno */
+#else
 #ifdef _WIN32
 #include <windows.h>
 #include <conio.h>
@@ -43,10 +48,111 @@
 #include <termios.h>
 #include <sys/ioctl.h>
 #endif
+#endif
 
 #include "readline_tty.h"
 
 static int ctrl_c_pressed;
+
+#ifdef ESP_PLATFORM
+
+/* Default terminal width when running on ESP32 (no ioctl support) */
+#define ESP_DEFAULT_TERM_WIDTH 80
+
+/* Delay (ms) for USB Serial/JTAG flush - allows USB task to transmit */
+#define ESP_USB_FLUSH_DELAY_MS 10
+
+/* Delay (ms) to yield when waiting for input */
+#define ESP_INPUT_POLL_DELAY_MS 1
+
+int readline_tty_init(void)
+{
+    ctrl_c_pressed = 0;
+    /* Ensure stdio is unbuffered so characters appear immediately over UART/USB. */
+    setvbuf(stdin, NULL, _IONBF, 0);
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+    return ESP_DEFAULT_TERM_WIDTH;
+}
+
+void term_printf(const char *fmt, ...)
+{
+    va_list ap;
+
+    va_start(ap, fmt);
+    vprintf(fmt, ap);
+    va_end(ap);
+}
+
+void term_flush(void)
+{
+    fflush(stdout);
+    /* USB Serial/JTAG (ESP32-C6, C3, H2) buffers output and may not transmit
+       immediately. fsync() flushes the VFS/driver layer, and a small yield
+       allows the USB task to actually transmit. Without this, the prompt
+       may appear after user input. Harmless on USB CDC (S3). */
+    fsync(fileno(stdout));
+    vTaskDelay(pdMS_TO_TICKS(ESP_USB_FLUSH_DELAY_MS));
+}
+
+const char *readline_tty(ReadlineState *s,
+                         const char *prompt, BOOL multi_line)
+{
+    int ctrl_c_count, c, ret;
+    const char *ret_str;
+
+    (void)multi_line;
+
+    ret_str = NULL;
+    readline_start(s, prompt, FALSE);
+    /* Ensure prompt is transmitted before waiting for input (C6 USB Serial/JTAG) */
+    term_flush();
+    ctrl_c_count = 0;
+    for (;;) {
+        c = fgetc(stdin);
+        if (c == EOF) {
+            /* Give other RTOS tasks a chance to run while waiting for input. */
+            vTaskDelay(pdMS_TO_TICKS(ESP_INPUT_POLL_DELAY_MS));
+            continue;
+        }
+        if (c == '\r')
+            c = '\n';
+        if (c == 3) {
+            /* ctrl-C */
+            ctrl_c_pressed++;
+        } else {
+            ret = readline_handle_byte(s, c);
+            if (ret == READLINE_RET_EXIT) {
+                break;
+            } else if (ret == READLINE_RET_ACCEPTED) {
+                ret_str = (const char *)s->term_cmd_buf;
+                break;
+            }
+            ctrl_c_count = 0;
+        }
+        if (ctrl_c_pressed) {
+            ctrl_c_pressed = 0;
+            if (ctrl_c_count == 0) {
+                printf("(Press Ctrl-C again to quit)\n");
+                ctrl_c_count++;
+            } else {
+                printf("Exiting.\n");
+                break;
+            }
+        }
+    }
+    return ret_str;
+}
+
+BOOL readline_is_interrupted(void)
+{
+    BOOL ret;
+    ret = (ctrl_c_pressed != 0);
+    ctrl_c_pressed = 0;
+    return ret;
+}
+
+#else /* ESP_PLATFORM */
 
 #ifdef _WIN32
 /* Windows 10 built-in VT100 emulation */
@@ -244,3 +350,4 @@ BOOL readline_is_interrupted(void)
     ctrl_c_pressed = 0;
     return ret;
 }
+#endif /* ESP_PLATFORM */
