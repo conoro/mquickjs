@@ -143,6 +143,52 @@ led.off()         // Turn off (remembers color)
 led.on()          // Restore last color
 ```
 
+### GPIO Control
+
+A `gpio` object is available for controlling standard GPIO pins on all ESP32 targets:
+
+```javascript
+// Initialize GPIO pin 8 as output
+gpio.init(8, "out")
+
+// Set pin high (3.3V)
+gpio.write(8, 1)
+
+// Set pin low (0V)
+gpio.write(8, 0)
+
+// Initialize GPIO pin 9 as input with pull-up resistor
+gpio.init(9, "in_pullup")
+
+// Read pin value (returns 0 or 1)
+var value = gpio.read(9)
+
+// Change pull resistor mode (for input pins)
+gpio.setPull(9, "down")  // or "up", "none"
+```
+
+**Modes:**
+- `"out"` - Output mode
+- `"in"` - Input mode (floating, no pull resistor)
+- `"in_pullup"` - Input with internal pull-up resistor
+- `"in_pulldown"` - Input with internal pull-down resistor
+
+**Example: Blink a simple LED on ESP32-H2**
+
+```javascript
+// Connect LED (with 220-470Ω resistor) to GPIO 8
+gpio.init(8, "out")
+
+function blink() {
+  gpio.write(8, 1)  // LED on
+  setTimeout(function() {
+    gpio.write(8, 0)  // LED off
+    setTimeout(blink, 500)
+  }, 500)
+}
+blink()
+```
+
 ### Build Configuration
 
 Per-target configuration files are provided:

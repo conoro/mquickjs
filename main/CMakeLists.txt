@@ -3,6 +3,7 @@ set(MQJS_ROOT ${CMAKE_SOURCE_DIR})
 set(MQJS_SRCS
     ${MQJS_ROOT}/mqjs.c
     ${MQJS_ROOT}/mqjs_led.c
+    ${MQJS_ROOT}/mqjs_gpio.c
     ${MQJS_ROOT}/mquickjs.c
     ${MQJS_ROOT}/dtoa.c
     ${MQJS_ROOT}/libm.c
@@ -20,3 +21,6 @@ idf_component_register(
 
 # Enable LED support
 target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_LED)
+
+# Enable GPIO support
+target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_GPIO)

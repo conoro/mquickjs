@@ -337,6 +337,19 @@ static const JSClassDef js_led_obj =
     JS_OBJECT_DEF("LED", js_led);
 #endif
 
+#ifdef CONFIG_GPIO
+/* GPIO control for ESP32 - init(pin, mode), write(pin, level), read(pin), setPull(pin, pull) */
+static const JSPropDef js_gpio[] = {
+    JS_CFUNC_DEF("init", 2, js_gpio_init),
+    JS_CFUNC_DEF("write", 2, js_gpio_write),
+    JS_CFUNC_DEF("read", 1, js_gpio_read),
+    JS_CFUNC_DEF("setPull", 2, js_gpio_setPull),
+    JS_PROP_END,
+};
+static const JSClassDef js_gpio_obj =
+    JS_OBJECT_DEF("GPIO", js_gpio);
+#endif
+
 static const JSPropDef js_global_object[] = {
     JS_PROP_CLASS_DEF("Object", &js_object_class),
     JS_PROP_CLASS_DEF("Function", &js_function_class),
@@ -385,6 +398,9 @@ static const JSPropDef js_global_object[] = {
     JS_PROP_CLASS_DEF("performance", &js_performance_obj),
 #ifdef CONFIG_LED
     JS_PROP_CLASS_DEF("led", &js_led_obj),
+#endif
+#ifdef CONFIG_GPIO
+    JS_PROP_CLASS_DEF("gpio", &js_gpio_obj),
 #endif
     JS_CFUNC_DEF("print", 1, js_print),
 #ifdef CONFIG_CLASS_EXAMPLE

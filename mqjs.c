@@ -106,6 +106,9 @@ static JSValue js_performance_now(JSContext *ctx, JSValue *this_val, int argc, J
 /* LED functions are in mqjs_led.c */
 #include "mqjs_led.h"
 
+/* GPIO functions are in mqjs_gpio.c */
+#include "mqjs_gpio.h"
+
 /* load a script */
 static JSValue js_load(JSContext *ctx, JSValue *this_val, int argc, JSValue *argv)
 {

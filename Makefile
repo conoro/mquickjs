@@ -80,7 +80,7 @@ TEST_PROGS=dtoa_test libm_test
 
 all: $(PROGS)
 
-MQJS_OBJS=mqjs.o mqjs_led.o readline_tty.o readline.o mquickjs.o dtoa.o libm.o cutils.o
+MQJS_OBJS=mqjs.o mqjs_led.o mqjs_gpio.o readline_tty.o readline.o mquickjs.o dtoa.o libm.o cutils.o
 LIBS=-lm
 
 mqjs$(EXE): $(MQJS_OBJS)
@@ -88,9 +88,9 @@ mqjs$(EXE): $(MQJS_OBJS)
 
 mquickjs.o: mquickjs_atom.h
 
-# Build the REPL stdlib with LED support enabled
+# Build the REPL stdlib with LED and GPIO support enabled
 mqjs_stdlib.host.o: mqjs_stdlib.c
-	$(HOST_CC) $(HOST_CFLAGS) -DCONFIG_LED -c -o $@ $<
+	$(HOST_CC) $(HOST_CFLAGS) -DCONFIG_LED -DCONFIG_GPIO -c -o $@ $<
 
 mqjs_stdlib: mqjs_stdlib.host.o mquickjs_build.host.o
 	$(HOST_CC) $(HOST_LDFLAGS) -o $@ $^
